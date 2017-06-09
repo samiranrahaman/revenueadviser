@@ -1,0 +1,661 @@
+<?php
+$conn = mysqli_connect("localhost","root","Jafar786#","revenue");
+
+// Check connection
+if (mysqli_connect_errno())
+  {
+  echo "Failed to connect to MySQL: " . mysqli_connect_error();
+  }
+  
+ /* $sql = "INSERT INTO rev_stripe_payment_history set user_id=1,str_id='sssss'";
+
+if ($conn->query($sql) === TRUE) {
+    echo "New record created successfully";
+} else {
+    echo "Error: " . $sql . "<br>" . $conn->error;
+} */ 
+
+?> 
+<?php
+/**
+ * Stripe - Payment Gateway integration example
+ * ==============================================================================
+ * 
+ * @version v1.0: stripe_pay_demo.php 2016/09/29
+ * @copyright Copyright (c) 2016, http://www.ilovephp.net
+ * @author Sagar Deshmukh <sagarsdeshmukh91@gmail.com>
+ * You are free to use, distribute, and modify this software
+ * ==============================================================================
+ *
+ */
+
+// Stripe library
+require './stripe/stripe/Stripe.php';
+
+/* $params = array(
+	"testmode"   => "on",
+	"private_live_key" => "sk_live_xxxxxxxxxxxxxxxxxxxxx",
+	"public_live_key"  => "pk_live_xxxxxxxxxxxxxxxxxxxxx",
+	"private_test_key" => "sk_test_xxxxxxxxxxxxxxxxxxxxx",
+	"public_test_key"  => "pk_test_xxxxxxxxxxxxxxxxxxxxx"
+); */
+$params = array(
+	"testmode"   => "off",
+	"private_live_key" => "sk_live_10UmHHIJqlF0XEzUoTeQfAjr",
+	"public_live_key"  => "pk_live_JxJrNlUO5kw7kFl4jEmbjgp1",
+	"private_test_key" => "sk_test_TraugUWdAu5GTVV3Q57T5wIv",
+	"public_test_key"  => "pk_test_KHhBdUd59kSju6gGR56n5Nxy"
+);
+
+if ($params['testmode'] == "on") {
+	Stripe::setApiKey($params['private_test_key']);
+	$pubkey = $params['public_test_key'];
+} else {
+	Stripe::setApiKey($params['private_live_key']);
+	$pubkey = $params['public_live_key'];
+}
+if(isset($_POST['stripeToken']))
+{
+	$user_id=$_POST['user_id'];
+	$amount=$_POST['amount'];
+	/* $package=$_POST['package'];
+	$data=explode(",",$package);
+	$plan_id=$data[0];
+	$amount=$data[1]; */
+	 $sql = "select * from rev_user where user_interanal_id=".$_POST['user_id'];
+	$result=$conn->query($sql);
+	if ($result->num_rows > 0) 
+	{
+		 $user=$result->fetch_assoc();
+		 $email=$user['user_email_id'];
+		 $token = $_POST['stripeToken'];
+	
+	   $plan_id = strip_tags(trim($_POST['plan_id']));	
+       $invoiceid = "14526321";                      // Invoice ID
+	   $description = "Invoice #" . $invoiceid . " - " . $invoiceid;
+	
+	//$_POST['email']='samiran1109@gmail.com';
+	//echo $amount = base64_decode($_POST['amount']) * 100;
+	 $amount1 = $amount*100;
+	$using_discount=false; 
+	//$amount_cents = str_replace(".","","20.52");  // Chargeble amount
+	
+	// check for a discount code and make sure it is valid if present
+		 
+		 
+		    if(isset($_POST['discount']) && strlen(trim($_POST['discount'])) > 0)
+			 {
+				 
+				 if($plan_id=='plan1B' and $_POST['discount']=='showmethemoney1')
+				 {
+								 $using_discount = true;
+								 try {
+			 
+							$coupon = Stripe_Coupon::retrieve( trim( $_POST['discount'] ) );
+							
+							 if($using_discount !== false)
+								 {				
+										// calculate the discounted price
+										//$amount = $amount - ( $amount * ( $coupon->percent_off / 100 ) );
+										$amount1 = $amount1 - $coupon->amount_off;
+								 }
+								try {
+
+									 $customer = Stripe_Customer::create(array(
+													'source' => $_POST['stripeToken'],
+													'plan' => $plan_id,
+													'email' => strip_tags(trim($email)),
+													//'account_balance' => $amount1,
+													'coupon' => trim($_POST['discount']),
+													'description' => "Charge with one time setup fee"
+												)
+											);	
+									
+								   $str_id=$customer->id;
+								   $account_balance= $customer-> account_balance;
+									$created=$customer->created;
+								   $currency= $customer->currency;
+									$description= $customer->description;
+									$discount= $customer->discount;
+									$email=$customer->email;
+									$reg_discount=$coupon->amount_off;
+									 $sql2= "INSERT INTO rev_stripe_payment_history set 
+										user_id=$user_id,
+										 str_id='".$str_id."',
+										 account_balance='".$account_balance."' ,
+										 created='".$created."' ,
+										 currency='".$currency."' ,
+										 description='".$description."' ,
+										 subscription='$plan_id',
+										 discount='".$discount."',
+										 reg_discount='".$reg_discount."'";
+									$conn->query($sql2);
+									
+									$result = "success";
+
+								} catch(Stripe_CardError $e) {			
+
+								$error = $e->getMessage();
+									$result = "declined";
+
+								} catch (Stripe_InvalidRequestError $e) {
+									$result = "declined";		  
+								} catch (Stripe_AuthenticationError $e) {
+									$result = "declined";
+								} catch (Stripe_ApiConnectionError $e) {
+									$result = "declined";
+								} catch (Stripe_Error $e) {
+									$result = "declined";
+								} catch (Exception $e) {
+
+									if ($e->getMessage() == "zip_check_invalid") {
+										$result = "declined";
+									} else if ($e->getMessage() == "address_check_invalid") {
+										$result = "declined";
+									} else if ($e->getMessage() == "cvc_check_invalid") {
+										$result = "declined";
+									} else {
+										$result = "declined";
+									}		  
+								}
+								
+								
+								//echo "<BR>Stripe Payment Status with coupon: ".$result;
+								
+								//echo "<BR>Stripe Response with coupon : ";
+								//echo "<pre>";print_r($customer); 
+								//echo "<pre>";print_r($charge);
+			 
+						} catch (Exception $e) {
+			 
+							$result= "The coupon code you entered is invalid. Please click back and enter a valid code, or leave it blank for no discount.";
+			 
+						}
+					 
+				 }
+              
+			    else if($plan_id=='plan2B' and $_POST['discount']=='showmethemoney2')
+				 {
+					 $using_discount = true;
+					 $using_discount = true;
+								 try {
+			 
+							$coupon = Stripe_Coupon::retrieve( trim( $_POST['discount'] ) );
+							
+							 if($using_discount !== false)
+								 {				
+										// calculate the discounted price
+										//$amount = $amount - ( $amount * ( $coupon->percent_off / 100 ) );
+										$amount = $amount - $coupon->amount_off;
+								 }
+								try {
+
+									 $customer = Stripe_Customer::create(array(
+													'source' => $_POST['stripeToken'],
+													'plan' => $plan_id,
+													'email' => strip_tags(trim($email)),
+													//'account_balance' => $amount1,
+													'coupon' => trim($_POST['discount']),
+													'description' => "Charge with one time setup fee"
+												)
+											);	
+									
+								   $str_id=$customer->id;
+								   $account_balance= $customer-> account_balance;
+									$created=$customer->created;
+								   $currency= $customer->currency;
+									$description= $customer->description;
+									$discount= $customer->discount;
+									$email=$customer->email;
+									$reg_discount=$coupon->amount_off;
+									 $sql2= "INSERT INTO rev_stripe_payment_history set 
+										user_id=$user_id,
+										 str_id='".$str_id."',
+										 account_balance='".$account_balance."' ,
+										 created='".$created."' ,
+										 currency='".$currency."' ,
+										 description='".$description."' ,
+										 subscription='$plan_id',
+										 discount='".$discount."',
+										 reg_discount='".$reg_discount."'";
+									$conn->query($sql2);
+									
+									$result = "success";
+
+								} catch(Stripe_CardError $e) {			
+
+								$error = $e->getMessage();
+									$result = "declined";
+
+								} catch (Stripe_InvalidRequestError $e) {
+									$result = "declined";		  
+								} catch (Stripe_AuthenticationError $e) {
+									$result = "declined";
+								} catch (Stripe_ApiConnectionError $e) {
+									$result = "declined";
+								} catch (Stripe_Error $e) {
+									$result = "declined";
+								} catch (Exception $e) {
+
+									if ($e->getMessage() == "zip_check_invalid") {
+										$result = "declined";
+									} else if ($e->getMessage() == "address_check_invalid") {
+										$result = "declined";
+									} else if ($e->getMessage() == "cvc_check_invalid") {
+										$result = "declined";
+									} else {
+										$result = "declined";
+									}		  
+								}
+								
+								
+								//echo "<BR>Stripe Payment Status with coupon: ".$result;
+								
+								//echo "<BR>Stripe Response with coupon : ";
+								//echo "<pre>";print_r($customer); 
+								//echo "<pre>";print_r($charge);
+			 
+						} catch (Exception $e) {
+			 
+							$result= "The coupon code you entered is invalid. Please click back and enter a valid code, or leave it blank for no discount.";
+			 
+						}
+				 }
+				 
+				else  if($plan_id=='plan3B' and $_POST['discount']=='showmethemoney3')
+				 {
+					 $using_discount = true;
+					 $using_discount = true;
+								 try {
+			 
+							$coupon = Stripe_Coupon::retrieve( trim( $_POST['discount'] ) );
+							
+							 if($using_discount !== false)
+								 {				
+										// calculate the discounted price
+										//$amount = $amount - ( $amount * ( $coupon->percent_off / 100 ) );
+										$amount = $amount - $coupon->amount_off;
+								 }
+								try {
+
+									 $customer = Stripe_Customer::create(array(
+													'source' => $_POST['stripeToken'],
+													'plan' => $plan_id,
+													'email' => strip_tags(trim($email)),
+													//'account_balance' => $amount1,
+													'coupon' => trim($_POST['discount']),
+													'description' => "Charge with one time setup fee"
+												)
+											);	
+									
+								   $str_id=$customer->id;
+								   $account_balance= $customer-> account_balance;
+									$created=$customer->created;
+								   $currency= $customer->currency;
+									$description= $customer->description;
+									$discount= $customer->discount;
+									$email=$customer->email;
+									$reg_discount=$coupon->amount_off;
+									 $sql2= "INSERT INTO rev_stripe_payment_history set 
+										user_id=$user_id,
+										 str_id='".$str_id."',
+										 account_balance='".$account_balance."' ,
+										 created='".$created."' ,
+										 currency='".$currency."' ,
+										 description='".$description."' ,
+										 subscription='$plan_id',
+										 discount='".$discount."',
+										 reg_discount='".$reg_discount."'";
+									$conn->query($sql2);
+									
+									$result = "success";
+
+								} catch(Stripe_CardError $e) {			
+
+								$error = $e->getMessage();
+									$result = "declined";
+
+								} catch (Stripe_InvalidRequestError $e) {
+									$result = "declined";		  
+								} catch (Stripe_AuthenticationError $e) {
+									$result = "declined";
+								} catch (Stripe_ApiConnectionError $e) {
+									$result = "declined";
+								} catch (Stripe_Error $e) {
+									$result = "declined";
+								} catch (Exception $e) {
+
+									if ($e->getMessage() == "zip_check_invalid") {
+										$result = "declined";
+									} else if ($e->getMessage() == "address_check_invalid") {
+										$result = "declined";
+									} else if ($e->getMessage() == "cvc_check_invalid") {
+										$result = "declined";
+									} else {
+										$result = "declined";
+									}		  
+								}
+								
+								
+								//echo "<BR>Stripe Payment Status with coupon: ".$result;
+								
+								//echo "<BR>Stripe Response with coupon : ";
+								//echo "<pre>";print_r($customer); 
+								//echo "<pre>";print_r($charge);
+			 
+						} catch (Exception $e) {
+			 
+							$result= "The coupon code you entered is invalid. Please click back and enter a valid code, or leave it blank for no discount.";
+			 
+						}
+				 }
+				 else
+				 {
+					 $result= "The coupon code you entered is invalid.Not Matched with subscription Plan ";
+				 }
+			
+           
+		   
+ 
+		  }
+		  else
+			  
+			  {
+				  
+				 	try {
+                   //echo $amount1;
+					 $customer = Stripe_Customer::create(array(
+									'source' => $_POST['stripeToken'],
+									'plan' => $plan_id,
+									'email' => strip_tags(trim($email)),
+									//'account_balance' => $amount1,
+									'description' => "Charge with one time setup fee"
+								)
+							);	
+						
+				   $str_id=$customer->id;
+					   $account_balance= $customer-> account_balance;
+						$created=$customer->created;
+					   $currency= $customer->currency;
+						$description= $customer->description;
+						$discount= $customer->discount;
+						$email=$customer->email;
+						
+						 $sql2 = "INSERT INTO rev_stripe_payment_history set user_id=$user_id,str_id='$str_id',
+						     account_balance='$account_balance' ,
+							 created='$created' ,
+							 currency='$currency' ,
+							 description='$description' ,
+							 discount='$discount',
+							 subscription='$plan_id',
+							 reg_discount=0";
+						$conn->query($sql2);
+						
+					$result = "success";
+
+				} catch(Stripe_CardError $e) {			
+
+				$error = $e->getMessage();
+					$result = "declined";
+
+				} catch (Stripe_InvalidRequestError $e) {
+					$result = "declined";		  
+				} catch (Stripe_AuthenticationError $e) {
+					$result = "declined";
+				} catch (Stripe_ApiConnectionError $e) {
+					$result = "declined";
+				} catch (Stripe_Error $e) {
+					$result = "declined";
+				} catch (Exception $e) {
+
+					if ($e->getMessage() == "zip_check_invalid") {
+						$result = "declined";
+					} else if ($e->getMessage() == "address_check_invalid") {
+						$result = "declined";
+					} else if ($e->getMessage() == "cvc_check_invalid") {
+						$result = "declined";
+					} else {
+						$result = "declined";
+					}		  
+				}
+				
+				/* echo "<BR>Stripe Payment Status : ".$result;
+				
+				echo "<BR>Stripe Response : ";
+				echo "<pre>";print_r($customer); */ 
+				//echo "<pre>";print_r($charge);
+				  
+				  
+				  
+			  }
+		 
+		 
+		 
+	
+
+	
+	}
+	else
+	{
+		$result= "User not Exist!";
+	}
+	
+ 
+       if($result=='success')
+	   {
+		                $to = "samiran1109@gmail.com,".$email;
+						$subject = "Inubaan Software Product - Payment Successful Mail ";
+		   $message ='<table width="480" cellspacing="0" cellpadding="0" border="0">
+							<tbody><tr>
+							<td valign="top" align="center">
+							<table style="border-bottom:1px solid #eee;padding:0 16px" width="480" height="50" cellspacing="0" cellpadding="24" border="0">
+							<tbody><tr>
+							<td style="background-color:#ffffff" valign="top">
+							<h1><span style="color:#f0b41c">Inubaan</span><span style="color:#002745">Software</span><sup><small style="color:#f0b41c;">™</small></sup>
+							</span></a></h1>
+							</td>
+							<td style="text-align:right">
+							</td>
+							</tr>
+							</tbody></table>
+							</td>
+							</tr>
+							<tr>
+							<td valign="top" align="center">
+							<table style="padding:0 16px 10px" width="480" cellspacing="0" cellpadding="24" border="0">
+							<tbody><tr>
+							<td style="background-color:#ffffff" valign="top">
+							<font style="font-size:16px;color:#444;">
+							<p>Hi <a style="color:black;text-decoration:none" rel="noreferrer">'.$email.'</a>,</p>
+							<p>Thank you for your Payment.Your account is Active. Please login through below link.</p>
+							<p><a href="http://profitandloss.io/index.php/login">Please click on this link to Login.</a></p>
+							<br>
+
+							<p>Kind regards,<br>Inubaan Software Team</p>
+							</font>
+							</td>
+							</tr>
+							</tbody></table>
+							</td>
+							</tr>
+							</tbody></table>';
+
+						// Always set content-type when sending HTML email
+						$headers = "MIME-Version: 1.0" . "\r\n";
+						$headers .= "Content-type:text/html;charset=UTF-8" . "\r\n";
+
+						// More headers
+						$headers .= 'From: Inubaan Software<register@profitandloss.io>' . "\r\n";
+						//$headers .= 'Cc: myboss@example.com' . "\r\n";
+
+						mail($to,$subject,$message,$headers);
+						
+						
+        /* $sql1="update `rev_user` set mail_verfication_code='', user_status=1 where `user_interanal_id`='$user_id' and and `mail_verfication_code`='$verificationcode'"; */
+		 $sql1="update `rev_user` set mail_verfication_code='', user_status=1 ,subscription='$plan_id' where `user_interanal_id`='$user_id'"; 
+		
+		        $conn->query($sql1);
+				header('Location: http://profitandloss.io/index.php/paymentsuccess');
+                exit;
+	   }
+}
+?>
+<!DOCTYPE html>
+<html>
+<head>
+ <title>PNL | Stripe</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    
+<meta name="keywords" content="PNL" />
+
+    
+<!-- font files -->
+
+<!-- /font files -->
+    
+    
+<!-- css files -->
+<link href="<?php echo base_url();?>css/style_l.css" rel='stylesheet' type='text/css' media="all" />
+<!-- /css files -->
+  <script src="https://ajax.googleapis.com/ajax/libs/angularjs/1.4.8/angular.min.js"></script>
+</head>
+<body class="hold-transition login-page" ng-app="myApp" ng-controller="formCtrl" style="background: #fff;">
+<div class="form-w3ls">
+        
+    <ul class="tab-group cl-effect-4">
+      <li class="tab active "><a href="<?php echo base_url();?>index.php/login">Payment Info</a></li>        
+    </ul>
+    <div class="tab-content1">
+       
+		<?php if(isset($result))
+		{
+			?>
+			 <p style="background-color: red;padding: 8px 7px 7px 9px;">
+			 <?php
+			if($result=='success')
+			{
+				
+			}
+			else
+			{
+				echo $result;
+			}
+			
+		}?>
+		</p>
+		<?php
+		?>
+		
+        <!--  <form action="http://profitandloss.io/index.php/stripepayment/stripe_data" method="POST" id="payment-form">-->
+		<form action="" method="POST" id="payment-form">
+  <span class="payment-errors"></span>
+
+  <div class="form-row">
+    <label>
+      <span>Card Number</span>
+      <input type="text" size="20" data-stripe="number">
+    </label>
+  </div>
+
+  <div class="form-row">
+    <label>
+      <span>Expiration (MM/YY)</span>
+      <input type="text" size="2" data-stripe="exp_month">
+    </label>
+    <span> / </span>
+    <input type="text" size="2" data-stripe="exp_year">
+  </div>
+
+  <div class="form-row">
+    <label>
+      <span>CVC</span>
+      <input type="text" size="4" data-stripe="cvc">
+    </label>
+  </div>
+  <!--<div class="form-row">
+    <label>
+      <span>Plan</span>
+	 <select class="form-control1" id="subject" name="plan_id" required>
+	 <option value="" selected="selected">Select Package</option>
+	 <option label="Login Page" value="pack1">package1</option> 
+	 <option label="Login Page" value="package2">package2</option>
+	 </select>
+    </label>
+  </div>-->
+  <?php if($plan_id=='plan1B' || $plan_id=='plan2B' || $plan_id=='plan3B')
+  {
+	  ?>
+  <div class="form-row">
+    <label>
+      <span>Coupon code</span>
+      <input type="text" size="4" name="discount" >
+    </label>
+  </div>
+  <?php
+    }
+  ?>
+  <input type="hidden" name="user_id" value="<?php echo $user_id; ?>"/>
+   <input type="hidden" name="plan_id" value="<?php echo $plan_id; ?>"/>
+    <input type="hidden" name="amount" value="<?php echo $amount; ?>"/>
+	 <input type="hidden" name="package" value="<?php echo $package; ?>"/>
+	 <!--<input type="hidden" name="verificationcode" value="<?php echo $verificationcode; ?>"/>-->
+	
+   
+  <input type="submit" class="submit" value="Submit Payment">
+</form>
+	
+	
+	
+ </div>
+  </div>
+    </div>
+	
+	</div> <!-- /form -->	  
+<p class="copyright">Copyright © 2017- All rights reserved -Powered by INUBAAN SOFTWARE.</p>
+
+<script src="https://ajax.googleapis.com/ajax/libs/jquery/1.11.2/jquery.min.js"></script>
+<script type="text/javascript" src="https://js.stripe.com/v2/"></script>
+<!-- TO DO : Place below JS code in js file and include that JS file -->
+<script type="text/javascript">
+	Stripe.setPublishableKey('<?php echo $params['public_test_key']; ?>');
+  
+	$(function() {
+	  var $form = $('#payment-form');
+	  $form.submit(function(event) {
+		// Disable the submit button to prevent repeated clicks:
+		$form.find('.submit').prop('disabled', true);
+	
+		// Request a token from Stripe:
+		Stripe.card.createToken($form, stripeResponseHandler);
+	
+		// Prevent the form from being submitted:
+		return false;
+	  });
+	});
+
+	function stripeResponseHandler(status, response) {
+	  // Grab the form:
+	  var $form = $('#payment-form');
+	
+	  if (response.error) { // Problem!
+	
+		// Show the errors on the form:
+		$form.find('.payment-errors').text(response.error.message);
+		$form.find('.submit').prop('disabled', false); // Re-enable submission
+	
+	  } else { // Token was created!
+	
+		// Get the token ID:
+		var token = response.id;
+
+		// Insert the token ID into the form so it gets submitted to the server:
+		$form.append($('<input type="hidden" name="stripeToken">').val(token));
+	
+		// Submit the form:
+		$form.get(0).submit();
+	  }
+	};
+</script>
+</body>
+</html>
